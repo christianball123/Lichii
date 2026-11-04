@@ -41,6 +41,27 @@ fpsimd_context* GetFloatingPointState(mcontext_t& host_ctx) {
     return reinterpret_cast<fpsimd_context*>(header);
 }
 
+// True when the fault was a data read, from the syndrome (ESR) the kernel saves with the context.
+// Unknown faults count as writes, as they did before reads could be told apart.
+bool IsReadFault(mcontext_t& host_ctx) {
+    auto* header = reinterpret_cast<_aarch64_ctx*>(&host_ctx.__reserved);
+    const auto* const end = reinterpret_cast<const char*>(&host_ctx.__reserved) +
+                            sizeof(host_ctx.__reserved);
+    while (header->magic != 0 && header->size != 0 &&
+           reinterpret_cast<const char*>(header) + header->size <= end) {
+        if (header->magic == ESR_MAGIC) {
+            const u64 esr = reinterpret_cast<esr_context*>(header)->esr;
+            const u64 ec = esr >> 26;
+            const bool data_abort = ec == 0x24 || ec == 0x25;
+            const bool write = (esr >> 6) & 1;            // WnR
+            const bool cache_maintenance = (esr >> 8) & 1; // CM
+            return data_abort && !write && !cache_maintenance;
+        }
+        header = reinterpret_cast<_aarch64_ctx*>(reinterpret_cast<char*>(header) + header->size);
+    }
+    return false;
+}
+
 using namespace Common::Literals;
 constexpr u32 StackSize = 128_KiB;
 
@@ -165,6 +186,11 @@ bool ArmNce::HandleGuestAccessFault(GuestContext* guest_ctx, void* raw_info, voi
     const Common::ProcessAddress addr =
         (reinterpret_cast<u64>(info->si_addr) & ~Memory::YUZU_PAGEMASK);
     auto& memory = guest_ctx->parent->m_running_thread->GetOwnerProcess()->GetMemory();
+    auto& host_ctx = static_cast<ucontext_t*>(raw_context)->uc_mcontext;
+    if (IsReadFault(host_ctx) && memory.HandleNceReadTrap(addr, Memory::YUZU_PAGESIZE)) {
+        // A read of a page the GPU wrote: its data was flushed back and the page is readable.
+        return true;
+    }
     if (memory.InvalidateNCE(addr, Memory::YUZU_PAGESIZE)) {
         // We handled the access successfully and are returning to guest code.
         return true;

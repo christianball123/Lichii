@@ -554,16 +554,15 @@ struct Memory::Impl {
 
     /// Read traps replace reactive flushing's blanket read protection of every cached page: only
     /// pages the GPU writes are protected, and each one only until its first read
-    /// (EDEN_NX2_READ_TRAPS=0 turns them off). Under NCE every fault is taken as a write, so they
-    /// are not used there.
+    /// (EDEN_NX2_READ_TRAPS=0 turns them off). Under NCE, read faults are told apart from writes
+    /// by the fault syndrome (ArmNce::HandleGuestAccessFault).
     bool ReadTrapsEnabled() const {
         static const bool disabled = [] {
             const char* value = std::getenv("EDEN_NX2_READ_TRAPS");
             return value != nullptr && value[0] == '0';
         }();
         return !disabled && current_page_table->fastmem_arena &&
-               !Settings::values.use_reactive_flushing.GetValue() &&
-               Settings::values.cpu_backend.GetValue() != Settings::CpuBackend::Nce;
+               !Settings::values.use_reactive_flushing.GetValue();
     }
 
     void RasterizerArmReadTraps(u64 vaddr, u64 size) {
@@ -1144,6 +1143,17 @@ bool Memory::InvalidateNCE(Common::ProcessAddress vaddr, size_t size) {
 #endif
 
     return mapped && ptr != nullptr;
+}
+
+bool Memory::HandleNceReadTrap(Common::ProcessAddress vaddr, size_t size) {
+    const u64 address = GetInteger(vaddr);
+    if (!impl->ReadTrapArmed(address, size)) {
+        return false;
+    }
+    impl->HandleRasterizerDownload(address, size);
+    // The download can be skipped for an area this core already read; the trap still has to go.
+    impl->DisarmReadTraps(address, size);
+    return true;
 }
 
 bool Memory::InvalidateSeparateHeap(void* fault_address) {

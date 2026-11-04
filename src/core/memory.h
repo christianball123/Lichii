@@ -506,6 +506,10 @@ public:
 
     bool InvalidateNCE(Common::ProcessAddress vaddr, size_t size);
 
+    /// Handles an NCE read fault on a page with an armed read trap: flushes the GPU's data back
+    /// and makes the page readable. Returns false when no trap is armed there.
+    bool HandleNceReadTrap(Common::ProcessAddress vaddr, size_t size);
+
     bool InvalidateSeparateHeap(void* fault_address);
 
 private:
