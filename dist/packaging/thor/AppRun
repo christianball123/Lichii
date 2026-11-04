@@ -1,0 +1,16 @@
+#!/bin/sh
+# AppImage launcher for the AYN Thor (ArmadaOS / Fedora, Adreno 740 with Mesa Turnip).
+HERE="$(dirname "$(readlink -f "$0")")"
+export QT_PLUGIN_PATH="$HERE/usr/plugins"
+
+# Game Mode (gamescope): Qt windows are most reliable through XWayland there.
+if [ -n "$GAMESCOPE_WAYLAND_DISPLAY" ] && [ -z "$QT_QPA_PLATFORM" ]; then
+    export QT_QPA_PLATFORM=xcb
+fi
+
+# Bigger Mesa shader cache (default 1 GB) so Switch 2 games don't rebuild shaders every launch.
+export MESA_SHADER_CACHE_MAX_SIZE="${MESA_SHADER_CACHE_MAX_SIZE:-4G}"
+
+# ./Lichii.AppImage --cli <args> runs the command-line build instead.
+if [ "$1" = "--cli" ]; then shift; exec "$HERE/usr/bin/eden-cli" "$@"; fi
+exec "$HERE/usr/bin/lichii" "$@"
