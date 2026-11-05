@@ -114,7 +114,8 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
                         std::span<u8>{decompressed_size}.first(nso_header.segments[i].size),
                         std::span<const u8>{compressed_data}.first(nso_header.segments_compressed_size[i])
                     );
-                    ASSERT(r > 0);
+                    ASSERT_MSG(r > 0, "ZBIC segment {} ({} -> {} bytes) failed to decompress", i,
+                               nso_header.segments_compressed_size[i], nso_header.segments[i].size);
                 } else {
                     // LZ4 compression
                     int r = Common::Compression::DecompressDataLZ4(
